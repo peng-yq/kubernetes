@@ -127,6 +127,7 @@ const (
 )
 
 // NewKubeletCommand creates a *cobra.Command object with default parameters
+// note： 创建一个cobra.Command对象，配置了kubelet的接口
 func NewKubeletCommand() *cobra.Command {
 	cleanFlagSet := pflag.NewFlagSet(componentKubelet, pflag.ContinueOnError)
 	cleanFlagSet.SetNormalizeFunc(cliflag.WordSepNormalizeFunc)
@@ -164,8 +165,24 @@ is checked every 20 seconds (also configurable with a flag).`,
 		// so we do all our parsing manually in Run, below.
 		// DisableFlagParsing=true provides the full set of flags passed to the kubelet in the
 		// `args` arg to Run, without Cobra's interference.
+
+		// note：禁用标志解析：
+		// 设置DisableFlagParsing: true告诉Cobra库不要自动解析命令行参数。
+		// 这是因为kubelet需要根据自己的规则手动解析这些参数，以确保标志的优先级得到正确处理。
 		DisableFlagParsing: true,
+		// note：避免在错误发生时自动打印使用信息。
 		SilenceUsage:       true,
+		// note：RunE：解析命令行参数。
+		// 检查非标志参数。
+		// 短路处理帮助和版本标志。
+		// 设置和验证特性门控。
+		// 加载和合并kubelet配置文件。
+		// 初始化日志系统。
+		// 验证kubelet的配置。
+		// 构建kubelet的依赖关系。
+		// 检查权限。
+		// 设置信号上下文，准备优雅地关闭kubelet。
+		// 启动kubelet。
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// initial flag parse, since we disable cobra's flag parsing
 			if err := cleanFlagSet.Parse(args); err != nil {
@@ -311,6 +328,13 @@ is checked every 20 seconds (also configurable with a flag).`,
 // For example, if the drop-in directory contains files named "10-config.conf" and "20-config.conf",
 // the configurations in "10-config.conf" will be applied first, and then the configurations in "20-config.conf" will be applied,
 // potentially overriding the previous values.
+
+//note：合并kubelet的基础配置和drop-in配置：
+// drop-in配置文件根据文件名的词典顺序进行处理。这意味着，文件名中的数字前缀决定了配置应用的顺序。
+// 文件名中较低的数字前缀表示的配置会先被应用，而数字较高的配置文件则后应用。这允许后面的配置覆盖之前的配置值。
+// 如果多个配置文件中包含相同的配置项，那么数字前缀较高的文件中的配置将覆盖前面文件中的相应配置。
+
+// Drop-in指的是一种机制，允许用户或管理员通过添加、修改或删除一个或多个独立的文件来改变或扩展软件的默认配置，而无需直接修改主配置文件。
 func mergeKubeletConfigurations(kubeletConfig *kubeletconfiginternal.KubeletConfiguration, kubeletDropInConfigDir string) error {
 	const dropinFileExtension = ".conf"
 	baseKubeletConfigJSON, err := json.Marshal(kubeletConfig)
@@ -370,6 +394,7 @@ func newFakeFlagSet(fs *pflag.FlagSet) *pflag.FlagSet {
 // We must enforce flag precedence by re-parsing the command line into the new object.
 // This is necessary to preserve backwards-compatibility across binary upgrades.
 // See issue #56171 for more details.
+// note: 处理kubelet配置和命令行标志之间的优先级
 func kubeletConfigFlagPrecedence(kc *kubeletconfiginternal.KubeletConfiguration, args []string) error {
 	// We use a throwaway kubeletFlags and a fake global flagset to avoid double-parses,
 	// as some Set implementations accumulate values from multiple flag invocations.
@@ -1194,6 +1219,11 @@ func setContentTypeForClient(cfg *restclient.Config, contentType string) {
 //	3 Standalone 'kubernetes' binary
 //
 // Eventually, #2 will be replaced with instances of #3
+
+// note：设置和运行一个kubelet实例。该函数在三种不同的应用场景中被使用：
+// 集成测试
+// Kubelet二进制文件
+// 独立的'kubernetes'二进制文件
 func RunKubelet(kubeServer *options.KubeletServer, kubeDeps *kubelet.Dependencies, runOnce bool) error {
 	hostname, err := nodeutil.GetHostname(kubeServer.HostnameOverride)
 	if err != nil {
@@ -1217,6 +1247,7 @@ func RunKubelet(kubeServer *options.KubeletServer, kubeDeps *kubelet.Dependencie
 		AllowPrivileged: true,
 	})
 
+	// note：这个是读取docker的配置文件（用户名、密码等等），和仓库通信用
 	credentialprovider.SetPreferredDockercfgPath(kubeServer.RootDirectory)
 	klog.V(2).InfoS("Using root directory", "path", kubeServer.RootDirectory)
 

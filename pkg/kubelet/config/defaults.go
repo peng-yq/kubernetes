@@ -17,6 +17,7 @@ limitations under the License.
 package config
 
 // Defines sane defaults for the kubelet config.
+// note：定义了k8s默认的配置目录
 const (
 	DefaultKubeletPodsDirName                = "pods"
 	DefaultKubeletVolumesDirName             = "volumes"

@@ -46,6 +46,8 @@ type Version interface {
 	String() string
 }
 
+// note：下面这些结构体是和镜像、运行时相关的
+
 // ImageSpec is an internal representation of an image.  Currently, it wraps the
 // value of a Container's Image field, but in the future it will include more detailed
 // information about the different image types.
@@ -65,6 +67,7 @@ type ImageStats struct {
 	TotalStorageBytes uint64
 }
 
+// note：runtime应该实现的接口
 // Runtime interface defines the interfaces that should be implemented
 // by a container runtime.
 // Thread safety is required from implementations of this interface.
@@ -140,6 +143,7 @@ type Runtime interface {
 // StreamingRuntime is the interface implemented by runtimes that handle the serving of the
 // streaming calls (exec/attach/port-forward) themselves. In this case, Kubelet should redirect to
 // the runtime server.
+// note：用于容器的exec/attach/port-forward操作
 type StreamingRuntime interface {
 	GetExec(ctx context.Context, id ContainerID, cmd []string, stdin, stdout, stderr, tty bool) (*url.URL, error)
 	GetAttach(ctx context.Context, id ContainerID, stdin, stdout, stderr, tty bool) (*url.URL, error)
@@ -147,6 +151,7 @@ type StreamingRuntime interface {
 }
 
 // ImageService interfaces allows to work with image service.
+// note：定义了一个接口，包含和镜像相关的多种方法（拉取、获取信息等等）
 type ImageService interface {
 	// PullImage pulls an image from the network to local storage using the supplied
 	// secrets if necessary. It returns a reference (digest or ID) to the pulled image.
@@ -166,6 +171,8 @@ type ImageService interface {
 	GetImageSize(ctx context.Context, image ImageSpec) (uint64, error)
 }
 
+// note；下面两个是进入容器和在容器里面执行命令的接口
+
 // Attacher interface allows to attach a container.
 type Attacher interface {
 	AttachContainer(ctx context.Context, id ContainerID, stdin io.Reader, stdout, stderr io.WriteCloser, tty bool, resize <-chan remotecommand.TerminalSize) (err error)
@@ -177,6 +184,8 @@ type CommandRunner interface {
 	// If the command completes with a non-0 exit code, a k8s.io/utils/exec.ExitError will be returned.
 	RunInContainer(ctx context.Context, id ContainerID, cmd []string, timeout time.Duration) ([]byte, error)
 }
+
+// note：关于pod的定义（一组容器）
 
 // Pod is a group of containers.
 type Pod struct {
@@ -207,6 +216,7 @@ type PodPair struct {
 }
 
 // ContainerID is a type that identifies a container.
+// note: ContainerID结构体中的Type包含其采用的runtime
 type ContainerID struct {
 	// The type of the container runtime. e.g. 'docker'.
 	Type string
@@ -231,6 +241,7 @@ func ParseContainerID(containerID string) ContainerID {
 }
 
 // ParseString converts given string into ContainerID
+// note：ContainerID的格式为：runtime类型（docker/containerd://容器id）
 func (c *ContainerID) ParseString(data string) error {
 	// Trim the quotes and split the type and ID.
 	parts := strings.Split(strings.Trim(data, "\""), "://")
@@ -263,6 +274,7 @@ func (c *ContainerID) UnmarshalJSON(data []byte) error {
 // State represents the state of a container
 type State string
 
+// note：枚举容器的状态，k8s只关心三种状态created（创建了还未启动）、running和exited
 const (
 	// ContainerStateCreated indicates a container that has been created (e.g. with docker create) but not started.
 	ContainerStateCreated State = "created"
@@ -276,6 +288,7 @@ const (
 
 // Container provides the runtime information for a container, such as ID, hash,
 // state of the container.
+// note：包含容器镜像
 type Container struct {
 	// The ID of the container, used by the container runtime to identify
 	// a container.
@@ -337,6 +350,7 @@ type ContainerResources struct {
 }
 
 // Status represents the status of a container.
+// note：和container结构体差不多，这个是podstatus结构体中的一部分
 type Status struct {
 	// ID of the container.
 	ID ContainerID
@@ -397,6 +411,7 @@ func (podStatus *PodStatus) GetRunningContainerStatuses() []*Status {
 }
 
 // Image contains basic information about a container image.
+// note：镜像相关的结构体
 type Image struct {
 	// ID of the image.
 	ID string

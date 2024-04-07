@@ -25,6 +25,7 @@ import (
 )
 
 // Annotation keys for annotations used in this package.
+// note：Kubernetes中Pod配置相关的注解键。注解（Annotations）在Kubernetes资源中用于存储额外的非标识性元数据，这些元数据可以由工具、库、或者用户自定义。
 const (
 	ConfigSourceAnnotationKey    = "kubernetes.io/config.source"
 	ConfigMirrorAnnotationKey    = v1.MirrorPodAnnotationKey
@@ -36,6 +37,7 @@ const (
 type PodOperation int
 
 // These constants identify the PodOperations that can be made on a pod configuration.
+// note：pod的操作，从0开始
 const (
 	// SET is the current pod configuration.
 	SET PodOperation = iota
@@ -53,6 +55,7 @@ const (
 )
 
 // These constants identify the sources of pods.
+// note：pods资源来源的方式，有三种：文件、http（网络上的）和api server
 const (
 	// Filesource idenitified updates from a file.
 	FileSource = "file"
@@ -76,6 +79,10 @@ const NamespaceDefault = metav1.NamespaceDefault
 // Additionally, Pods should never be nil - it should always point to an empty slice. While
 // functionally similar, this helps our unit tests properly check that the correct PodUpdates
 // are generated.
+// note：
+// 用于在一个通道（channel）上发送操作。这个结构体的设计允许通过发送一个包含单个服务的数组并指定操作类型（Op），
+// 来添加或删除单个服务。具体的操作类型包括ADD和REMOVE，对于REMOVE操作，只需要指定服务的ID。
+// 此外，还可以通过设置Pods为期望的状态并将Op设置为SET，来将系统的状态重置为此源配置指定的状态。如果要移除所有Pods，可以将Pods设置为一个空对象并将Op设置为SET。
 type PodUpdate struct {
 	Pods   []*v1.Pod
 	Op     PodOperation
@@ -111,6 +118,7 @@ func GetPodSource(pod *v1.Pod) (string, error) {
 }
 
 // SyncPodType classifies pod updates, eg: create, update.
+// note：同步pod的操作
 type SyncPodType int
 
 const (
@@ -141,6 +149,7 @@ func (sp SyncPodType) String() string {
 }
 
 // IsMirrorPod returns true if the passed Pod is a Mirror Pod.
+// note：判断是否是镜像pod通过pod结构体的注解
 func IsMirrorPod(pod *v1.Pod) bool {
 	if pod.Annotations == nil {
 		return false
@@ -150,6 +159,7 @@ func IsMirrorPod(pod *v1.Pod) bool {
 }
 
 // IsStaticPod returns true if the pod is a static pod.
+// note：通过判断是否是api创建来判断是否是静态pod
 func IsStaticPod(pod *v1.Pod) bool {
 	source, err := GetPodSource(pod)
 	return err == nil && source != ApiserverSource

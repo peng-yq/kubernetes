@@ -44,12 +44,14 @@ import (
 // store data.  These functions are useful to pass interfaces to other modules
 // that may need to know where to write data without getting a whole kubelet
 // instance.
+// note：一般是/var/lib/kubelet
 func (kl *Kubelet) getRootDir() string {
 	return kl.rootDirectory
 }
 
 // getPodsDir returns the full path to the directory under which pod
 // directories are created.
+// note：/var/lib/kubelet/pods
 func (kl *Kubelet) getPodsDir() string {
 	return filepath.Join(kl.getRootDir(), config.DefaultKubeletPodsDirName)
 }
@@ -58,6 +60,7 @@ func (kl *Kubelet) getPodsDir() string {
 // directories are created.  Plugins can use these directories for data that
 // they need to persist.  Plugins should create subdirectories under this named
 // after their own names.
+// note：/var/lib/kubelet/plugins
 func (kl *Kubelet) getPluginsDir() string {
 	return filepath.Join(kl.getRootDir(), config.DefaultKubeletPluginsDirName)
 }
@@ -66,6 +69,7 @@ func (kl *Kubelet) getPluginsDir() string {
 // plugins socket should be placed to be registered.
 // More information is available about plugin registration in the pluginwatcher
 // module
+// note: /var/lib/kubelet/plugins_registry
 func (kl *Kubelet) getPluginsRegistrationDir() string {
 	return filepath.Join(kl.getRootDir(), config.DefaultKubeletPluginsRegistrationDirName)
 }
@@ -79,6 +83,7 @@ func (kl *Kubelet) getPluginDir(pluginName string) string {
 
 // getCheckpointsDir returns a data directory name for checkpoints.
 // Checkpoints can be stored in this directory for further use.
+// // note：一般是/var/lib/checkpoints
 func (kl *Kubelet) getCheckpointsDir() string {
 	return filepath.Join(kl.getRootDir(), config.DefaultKubeletCheckpointsDirName)
 }
@@ -100,6 +105,7 @@ func (kl *Kubelet) getVolumeDevicePluginDir(pluginName string) string {
 
 // GetPodDir returns the full path to the per-pod data directory for the
 // specified pod. This directory may not exist if the pod does not exist.
+// note：/var/lib/kubelet/pods/podUID
 func (kl *Kubelet) GetPodDir(podUID types.UID) string {
 	return kl.getPodDir(podUID)
 }
@@ -180,6 +186,7 @@ func (kl *Kubelet) getPodPluginDir(podUID types.UID, pluginName string) string {
 // getPodContainerDir returns the full path to the per-pod data directory under
 // which container data is held for the specified pod.  This directory may not
 // exist if the pod or container does not exist.
+// note: /var/lib/kubelet/pods/containers/
 func (kl *Kubelet) getPodContainerDir(podUID types.UID, ctrName string) string {
 	return filepath.Join(kl.getPodDir(podUID), config.DefaultKubeletContainersDirName, ctrName)
 }

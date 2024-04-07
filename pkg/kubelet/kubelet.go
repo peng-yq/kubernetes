@@ -1562,8 +1562,17 @@ func (kl *Kubelet) initializeRuntimeDependentModules() {
 }
 
 // Run starts the kubelet reacting to config updates
+// note：在Go语言中，<-chan是一个通道（Channel）类型的前缀，用来表示这个通道是只读的。
+// Go语言的通道（Channel）是在多个协程（Goroutine）之间进行通信的一种方式，它可以用来传递数据。
+// 通道可以是双向的，也可以是单向的，单向通道可以是只发送或只接收。
+// chan Type：表示一个可以发送和接收Type类型数据的双向通道。
+// chan<- Type：表示一个只发送Type类型数据的单向通道。
+// <-chan Type：表示一个只接收Type类型数据的单向通道。
+// <-chan kubetypes.PodUpdate表示updates是一个只接收kubetypes.PodUpdate类型数据的单向通道。
+// 这意味着在函数内部，你可以从updates通道中读取数据，但不能向其中发送数据
 func (kl *Kubelet) Run(updates <-chan kubetypes.PodUpdate) {
 	ctx := context.Background()
+	// note：初始化日志服务
 	if kl.logServer == nil {
 		file := http.FileServer(http.Dir(nodeLogDir))
 		if utilfeature.DefaultFeatureGate.Enabled(features.NodeLogQuery) && kl.kubeletConfiguration.EnableSystemLogQuery {
@@ -1604,6 +1613,7 @@ func (kl *Kubelet) Run(updates <-chan kubetypes.PodUpdate) {
 	}
 
 	// Start the cloud provider sync manager
+	// note：启动云提供商同步管理器，负责与云提供商的资源同步，例如更新节点上的信息以匹配云提供商的资源状态。
 	if kl.cloudResourceSyncManager != nil {
 		go kl.cloudResourceSyncManager.Run(wait.NeverStop)
 	}
@@ -1615,6 +1625,7 @@ func (kl *Kubelet) Run(updates <-chan kubetypes.PodUpdate) {
 	}
 
 	// Start volume manager
+	// note：启动卷管理器，负责管理节点上的存储卷，包括挂载、卸载以及更新存储卷等操作
 	go kl.volumeManager.Run(kl.sourcesReady, wait.NeverStop)
 
 	if kl.kubeClient != nil {
@@ -1627,37 +1638,61 @@ func (kl *Kubelet) Run(updates <-chan kubetypes.PodUpdate) {
 		// Introduce some small jittering to ensure that over time the requests won't start
 		// accumulating at approximately the same time from the set of nodes due to priority and
 		// fairness effect.
+		// note：启动了两个协程（goroutine）来更新节点状态。
+		// 第一个协程使用wait.JitterUntil函数定期（每kl.nodeStatusUpdateFrequency间隔）执行kl.syncNodeStatus方法。
+		// JitterUntil的第三个参数0.04表示抖动因子，用于在间隔时间上添加一些随机性，以避免多个节点同时发送更新请求。
+		// true参数表示在启动时立即执行一次kl.syncNodeStatus，而不是等待第一个间隔结束。wait.NeverStop确保这个定时任务会一直运行，直到Kubelet停止。
+		// 第二个协程执行kl.fastStatusUpdateOnce方法，这是一个一次性操作，目的是在节点变为就绪状态时快速更新状态，然后退出。
+		// 这有助于在节点启动期间提供更及时的状态更新。
 		go wait.JitterUntil(kl.syncNodeStatus, kl.nodeStatusUpdateFrequency, 0.04, true, wait.NeverStop)
 		go kl.fastStatusUpdateOnce()
 
 		// start syncing lease
+		// note：
+		// 管理节点租约。节点租约是Kubernetes 1.14引入的一种机制，用于更有效地实现节点心跳。
+		// 与传统的节点状态更新相比，租约机制可以减少apiserver的负载，并允许更频繁的心跳，从而使集群能够更快地检测到节点故障。
 		go kl.nodeLeaseController.Run(context.Background())
 	}
+	// note：检查容器运行时（如Docker或containerd）的健康状态，并更新Kubelet的内部状态，以便Kubelet可以根据容器运行时的状态做出相应的调整。
 	go wait.Until(kl.updateRuntimeUp, 5*time.Second, wait.NeverStop)
 
 	// Set up iptables util rules
+	// note：管理容器网络，例如设置网络隔离规则、端口映射等。
 	if kl.makeIPTablesUtilChains {
 		kl.initNetworkUtil()
 	}
 
 	// Start component sync loops.
+	// note：同步Pod的状态信息到apiserver，确保集群中其他组件可以获取到最新的Pod状态。
 	kl.statusManager.Start()
 
 	// Start syncing RuntimeClasses if enabled.
 	if kl.runtimeClassManager != nil {
+		// note：启动RuntimeClass同步。RuntimeClass是Kubernetes提供的一种机制，用于选择容器运行时配置
 		kl.runtimeClassManager.Start(wait.NeverStop)
 	}
 
 	// Start the pod lifecycle event generator.
+	// note：PLEG（Pod生命周期事件生成器）负责监视Pod的生命周期事件（如创建、启动、停止等），并将这些事件通知给Kubelet进行处理
 	kl.pleg.Start()
 
 	// Start eventedPLEG only if EventedPLEG feature gate is enabled.
+	// note：事件化的PLEG是一种优化，旨在通过事件驱动的方式提高PLEG的效率和响应速度
 	if utilfeature.DefaultFeatureGate.Enabled(features.EventedPLEG) {
 		kl.eventedPleg.Start()
 	}
 
+	// note：Kubelet的主同步循环。这个循环是Kubelet运行的核心，负责监听事件（如Pod创建、更新等），
+	// 并根据这些事件调整Kubelet的行为，以管理节点上的容器和资源。
 	kl.syncLoop(ctx, updates, kl)
 }
+
+// note: 静态 Pod 在指定的节点上由 kubelet 守护进程直接管理，不需要 API 服务器监管。
+// 与由控制面管理的 Pod（例如，Deployment） 不同；kubelet 监视每个静态 Pod（在它失败之后重新启动）。
+// 静态 Pod 始终都会绑定到特定节点的 Kubelet 上。
+// kubelet 会尝试通过 Kubernetes API 服务器为每个静态 Pod 自动创建一个镜像 Pod。
+// 这意味着节点上运行的静态 Pod 对 API 服务来说是可见的，但是不能通过 API 服务器来控制。
+// Pod 名称将把以连字符开头的节点主机名作为后缀。
 
 // SyncPod is the transaction script for the sync of a single pod (setting up)
 // a pod. This method is reentrant and expected to converge a pod towards the
@@ -1742,39 +1777,46 @@ func (kl *Kubelet) SyncPod(ctx context.Context, updateType kubetypes.SyncPodType
 				"pod", klog.KObj(pod))
 		}
 	}
+	// note：记录延迟用于性能优化
 
 	// Generate final API pod status with pod and status manager status
 	apiPodStatus := kl.generateAPIPodStatus(pod, podStatus, false)
 	// The pod IP may be changed in generateAPIPodStatus if the pod is using host network. (See #24576)
 	// TODO(random-liu): After writing pod spec into container labels, check whether pod is using host network, and
 	// set pod IP to hostIP directly in runtime.GetPodStatus
+	// note：生成api pod状态
 	podStatus.IPs = make([]string, 0, len(apiPodStatus.PodIPs))
 	for _, ipInfo := range apiPodStatus.PodIPs {
 		podStatus.IPs = append(podStatus.IPs, ipInfo.IP)
 	}
 	if len(podStatus.IPs) == 0 && len(apiPodStatus.PodIP) > 0 {
 		podStatus.IPs = []string{apiPodStatus.PodIP}
-	}
+	} // note：处理pod ip地址
 
 	// If the pod is terminal, we don't need to continue to setup the pod
 	if apiPodStatus.Phase == v1.PodSucceeded || apiPodStatus.Phase == v1.PodFailed {
 		kl.statusManager.SetPodStatus(pod, apiPodStatus)
 		isTerminal = true
 		return isTerminal, nil
-	}
+	} // note：pod成功或失败退出表示生命周期结束，设置isTerminal为true，不会对其进行进一步调度
 
 	// If the pod should not be running, we request the pod's containers be stopped. This is not the same
 	// as termination (we want to stop the pod, but potentially restart it later if soft admission allows
 	// it later). Set the status and phase appropriately
+	// note：首先判断这个pod是否应该运行
 	runnable := kl.canRunPod(pod)
 	if !runnable.Admit {
 		// Pod is not runnable; and update the Pod and Container statuses to why.
+		// note：pod不应该运行，则更新pod状态（等待被调度或不能运行）
 		if apiPodStatus.Phase != v1.PodFailed && apiPodStatus.Phase != v1.PodSucceeded {
 			apiPodStatus.Phase = v1.PodPending
 		}
+		// note：设置原因和一些关键信息
 		apiPodStatus.Reason = runnable.Reason
 		apiPodStatus.Message = runnable.Message
 		// Waiting containers are not creating.
+		// note：对于Pod中的所有初始化容器和普通容器，如果它们的状态是等待（Waiting），则将等待原因设置为"Blocked"。
+		// 这表示这些容器因为某些原因被阻塞了，无法创建或启动。
 		const waitingReason = "Blocked"
 		for _, cs := range apiPodStatus.InitContainerStatuses {
 			if cs.State.Waiting != nil {
@@ -1790,6 +1832,7 @@ func (kl *Kubelet) SyncPod(ctx context.Context, updateType kubetypes.SyncPodType
 
 	// Record the time it takes for the pod to become running
 	// since kubelet first saw the pod if firstSeenTime is set.
+	// note：记录pod启动的耗时，用于监控pod启动性能和调度效率
 	existingStatus, ok := kl.statusManager.GetPodStatus(pod.UID)
 	if !ok || existingStatus.Phase == v1.PodPending && apiPodStatus.Phase == v1.PodRunning &&
 		!firstSeenTime.IsZero() {
@@ -1799,6 +1842,7 @@ func (kl *Kubelet) SyncPod(ctx context.Context, updateType kubetypes.SyncPodType
 	kl.statusManager.SetPodStatus(pod, apiPodStatus)
 
 	// Pods that are not runnable must be stopped - return a typed error to the pod worker
+	// note：调用runtime来关闭pod中的所有容器
 	if !runnable.Admit {
 		klog.V(2).InfoS("Pod is not runnable and must have running containers stopped", "pod", klog.KObj(pod), "podUID", pod.UID, "message", runnable.Message)
 		var syncErr error
@@ -1818,6 +1862,7 @@ func (kl *Kubelet) SyncPod(ctx context.Context, updateType kubetypes.SyncPodType
 	}
 
 	// If the network plugin is not ready, only start the pod if it uses the host network
+	// note：下面是网络插件状态检查和资源注册
 	if err := kl.runtimeState.networkErrors(); err != nil && !kubecontainer.IsHostNetworkPod(pod) {
 		kl.recorder.Eventf(pod, v1.EventTypeWarning, events.NetworkNotReady, "%s: %v", NetworkNotReadyErrorMsg, err)
 		return false, fmt.Errorf("%s: %v", NetworkNotReadyErrorMsg, err)
@@ -1835,9 +1880,11 @@ func (kl *Kubelet) SyncPod(ctx context.Context, updateType kubetypes.SyncPodType
 
 	// Create Cgroups for the pod and apply resource parameters
 	// to them if cgroups-per-qos flag is enabled.
+	// note：创建pod容器管理器，用于管理pod的cgroups
 	pcm := kl.containerManager.NewPodContainerManager()
 	// If pod has already been terminated then we need not create
 	// or update the pod's cgroup
+	// note：如果pod请求终止，不创建和更新cgroups
 	// TODO: once context cancellation is added this check can be removed
 	if !kl.podWorkers.IsPodTerminationRequested(pod.UID) {
 		// When the kubelet is restarted with the cgroups-per-qos
@@ -1845,6 +1892,7 @@ func (kl *Kubelet) SyncPod(ctx context.Context, updateType kubetypes.SyncPodType
 		// should be killed intermittently and brought back up
 		// under the qos cgroup hierarchy.
 		// Check if this is the pod's first sync
+		// note：查看该pod是否启动了
 		firstSync := true
 		for _, containerStatus := range apiPodStatus.ContainerStatuses {
 			if containerStatus.State.Running != nil {
@@ -1854,6 +1902,7 @@ func (kl *Kubelet) SyncPod(ctx context.Context, updateType kubetypes.SyncPodType
 		}
 		// Don't kill containers in pod if pod's cgroups already
 		// exists or the pod is running for the first time
+		// note：cgroup存在并且是首次启动则不杀死容器
 		podKilled := false
 		if !pcm.Exists(pod) && !firstSync {
 			p := kubecontainer.ConvertPodStatusToRunningPod(kl.getRuntime().Type(), podStatus)
@@ -1866,6 +1915,11 @@ func (kl *Kubelet) SyncPod(ctx context.Context, updateType kubetypes.SyncPodType
 				klog.ErrorS(err, "KillPod failed", "pod", klog.KObj(pod), "podStatus", podStatus)
 			}
 		}
+		// note： QoS Cgroups（Quality of Service Control Groups）是Kubernetes中用于实现资源管理和隔离的一种机制，
+		// 它基于Linux的Cgroups（控制组）功能。Cgroups允许Linux内核限制、记录和隔离进程组使用的物理资源（如CPU、内存等）。
+		// 在Kubernetes中，QoS Cgroups用于根据Pod的服务质量（Quality of Service，QoS）类别来管理和隔离Pod的资源使用，
+		// 确保关键任务的资源分配优先级高于其他较不重要的任务。
+		// 有三种级别
 		// Create and Update pod's Cgroups
 		// Don't create cgroups for run once pod if it was killed above
 		// The current policy is not to restart the run once pods when
@@ -1873,6 +1927,8 @@ func (kl *Kubelet) SyncPod(ctx context.Context, updateType kubetypes.SyncPodType
 		// expected to run only once and if the kubelet is restarted then
 		// they are not expected to run again.
 		// We don't create and apply updates to cgroup if its a run once pod and was killed above
+		// note：如果Pod被杀死并且Pod的重启策略为Never（只运行一次的Pod），则不创建或更新Cgroups。
+		// 如果Pod的Cgroups不存在，先尝试更新QoS（服务质量）Cgroups，然后确保Pod的Cgroups存在。
 		if !(podKilled && pod.Spec.RestartPolicy == v1.RestartPolicyNever) {
 			if !pcm.Exists(pod) {
 				if err := kl.containerManager.UpdateQOSCgroups(); err != nil {
@@ -1887,12 +1943,14 @@ func (kl *Kubelet) SyncPod(ctx context.Context, updateType kubetypes.SyncPodType
 	}
 
 	// Create Mirror Pod for Static Pod if it doesn't already exist
+	// note：为了让直接由kubelet启动的pod在集群中可见，为其创建静态pod
 	if kubetypes.IsStaticPod(pod) {
 		deleted := false
 		if mirrorPod != nil {
 			if mirrorPod.DeletionTimestamp != nil || !kubepod.IsMirrorPodOf(mirrorPod, pod) {
 				// The mirror pod is semantically different from the static pod. Remove
 				// it. The mirror pod will get recreated later.
+				// note：删除被标记为删除或语义与静态pod不同的镜像pod
 				klog.InfoS("Trying to delete pod", "pod", klog.KObj(pod), "podUID", mirrorPod.ObjectMeta.UID)
 				podFullName := kubecontainer.GetPodFullName(pod)
 				var err error
@@ -1904,6 +1962,7 @@ func (kl *Kubelet) SyncPod(ctx context.Context, updateType kubetypes.SyncPodType
 				}
 			}
 		}
+		// note： 创建静态pod
 		if mirrorPod == nil || deleted {
 			node, err := kl.GetNode()
 			if err != nil {
@@ -1920,6 +1979,7 @@ func (kl *Kubelet) SyncPod(ctx context.Context, updateType kubetypes.SyncPodType
 	}
 
 	// Make data directories for the pod
+	// note：为pod创建相关的目录：pod的目录，卷和插件的目录
 	if err := kl.makePodDataDirs(pod); err != nil {
 		kl.recorder.Eventf(pod, v1.EventTypeWarning, events.FailedToMakePodDataDirectories, "error making pod data directories: %v", err)
 		klog.ErrorS(err, "Unable to make pod data directories for pod", "pod", klog.KObj(pod))
@@ -1958,6 +2018,7 @@ func (kl *Kubelet) SyncPod(ctx context.Context, updateType kubetypes.SyncPodType
 	// Use WithoutCancel instead of a new context.TODO() to propagate trace context
 	// Call the container runtime's SyncPod callback
 	sctx := context.WithoutCancel(ctx)
+	// note：创建容器
 	result := kl.containerRuntime.SyncPod(sctx, pod, podStatus, pullSecrets, kl.backOff)
 	kl.reasonCache.Update(pod.UID, result)
 	if err := result.Error(); err != nil {
